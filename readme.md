@@ -26,6 +26,7 @@ Demo method:
 
 
 ### Demo:
-<img src="./demo/rgbFrames.gif" width="140" height="180"/>
-<img src="./demo/depth.gif" width="80" height="180"/>
-
+<div align="center">
+<img src="./demo/rgbFrames.gif" width="300" height="360"/>
+<img src="./demo/depth.gif" width="200" height="360"/>
+</div>
