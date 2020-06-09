@@ -27,4 +27,4 @@ Demo method:
 
 ### Demo:
 <img src="./demo/rgbFrames.gif" width="20" height="60"/>
-![DEPTH_FRAME|20x60](./demo/depth.gif)
+
