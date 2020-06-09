@@ -26,5 +26,5 @@ Demo method:
 
 
 ### Demo:
-![RGB_FRAME](./demo/rgbFrames.gif =50x100)
-![DEPTH_FRAME](./demo/depth.gif =50x100 )
+![RGB_FRAME|50x100](./demo/rgbFrames.gif)
+![DEPTH_FRAME|50x100](./demo/depth.gif)
