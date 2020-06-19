@@ -22,7 +22,7 @@ When you wanna finsh to detect chessboard, you can press "Q" to break. The calib
 Demo method:
 - [x] 2*D435
 - [x] 2*Image Files
-- [ ] 2*Fisheyes
+- [x] 2*Fisheyes (unstable)
 
 
 ### Demo:
