@@ -57,7 +57,7 @@ class BM_UI_Controller():
     
     def init_controller(self):
         self.master = tk.Tk()
-        self.master.title("StereoBM Settings");
+        self.master.title("StereoBM Settings")
         
         self.label = tk.Label(self.master, bg='yellow', width=100,height= 3, text='empty')
         self.label.pack()
@@ -91,10 +91,10 @@ class BM_UI_Controller():
         self.SpeckleWindowSize.pack()
         self.SpeckleWindowSize.set(100)
 
-with open('./stereo_cmaera_caliParam.pkl' ,'rb') as file :
+with open('./fisheye_stereo_cmaera_caliParam.pkl' ,'rb') as file :
     stero_param = pickle.load(file)
 
-def getRectifyTransform(height, width, config):
+def getRectifyTransform(height, width, config, fisheyeCali=False):
     """ load camera matrix and get stereo camera rectify param """
     left_K = config['Intrinsic_mtx_1']
     right_K = config['Intrinsic_mtx_2']
@@ -106,11 +106,23 @@ def getRectifyTransform(height, width, config):
     
     height = int(height)
     width = int(width)
-    R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(left_K, left_distortion, right_K, right_distortion, (width, height), R, T, alpha=0)
- 
-    map1x, map1y = cv2.initUndistortRectifyMap(left_K, left_distortion, R1, P1, (width, height), cv2.CV_32FC1)
-    map2x, map2y = cv2.initUndistortRectifyMap(right_K, right_distortion, R2, P2, (width, height), cv2.CV_32FC1)
- 
+
+    if fisheyeCali:
+        R1, R2, P1, P2, Q = cv2.fisheye.stereoRectify(left_K, left_distortion, 
+                                                      right_K, right_distortion, 
+                                                      (width, height), 
+                                                      R, 
+                                                      T, 
+#                                                      flags=cv2.CALIB_ZERO_DISPARITY,
+                                                      fov_scale=1)
+
+        map1x, map1y = cv2.fisheye.initUndistortRectifyMap(left_K, left_distortion, R1, P1, (width, height), cv2.CV_16FC1)  
+        map2x, map2y = cv2.fisheye.initUndistortRectifyMap(right_K, right_distortion, R2, P2, (width, height), cv2.CV_16FC1)
+    else:
+        R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(left_K, left_distortion, right_K, right_distortion, (width, height), R, T, alpha=0)
+        map1x, map1y = cv2.initUndistortRectifyMap(left_K, left_distortion, R1, P1, (width, height), cv2.CV_32FC1)
+        map2x, map2y = cv2.initUndistortRectifyMap(right_K, right_distortion, R2, P2, (width, height), cv2.CV_32FC1)
+    
     return map1x, map1y, map2x, map2y, Q
  
 def rectifyImage(image1, image2, map1x, map1y, map2x, map2y):
@@ -147,10 +159,10 @@ def disparity_SGBM(left_image, right_image, down_scale=False):
              'P1': 8 * img_channels * blockSize ** 2,
              'P2': 32 * img_channels * blockSize ** 2,
              'disp12MaxDiff': 1,
-             'preFilterCap': 63,
-             'uniquenessRatio': 1,
+             'preFilterCap': 31,
+             'uniquenessRatio': 15,
              'speckleWindowSize': 100,
-             'speckleRange': 1,
+             'speckleRange': 32,
              'mode': cv2.STEREO_SGBM_MODE_SGBM_3WAY
              }
  
@@ -210,47 +222,77 @@ def update_BM(stereo,paramDict):
     stereo.setTextureThreshold(paramDict['TextureThreshold'])
     stereo.setUniquenessRatio(paramDict['UniquenessRatio'])
     return stereo
+
+def update_SGBM(stereo,paramDict):
+    stereo.setBlockSize(paramDict['BlockSize'])
+    stereo.setMinDisparity(paramDict['MinDisparity'])
+    stereo.setNumDisparities(paramDict['NumDisparities'])
+    stereo.setTextureThreshold(paramDict['TextureThreshold'])
+    stereo.setUniquenessRatio(paramDict['UniquenessRatio'])
+    return stereo
     
 
 if __name__ == "__main__":
-    detet_source = 'd435'
+    detet_source = 'normal'
+    genDepth = True
+    bmUI = BM_UI_Controller()
+    myBM = initBM()
     
-    if detet_source == 'd435':
-        import pyrealsense2 as rs
-        from realsense_device_manager import DeviceManager
-        rs_config = rs.config()
-        rs_config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
-        leftCamId = '832112073441'
-        rightCamId = '832112072526'
-        device_manager = DeviceManager(rs.context(), rs_config)
-        device_manager.enable_device(leftCamId, enable_ir_emitter=False)
-        device_manager.enable_device(rightCamId, enable_ir_emitter=False)
+    if detet_source != 'ip':
+        if detet_source == 'd435':
+            import pyrealsense2 as rs
+            from realsense_device_manager import DeviceManager
+            rs_config = rs.config()
+            rs_config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
+            leftCamId = '832112073441'
+            rightCamId = '832112072526'
+            device_manager = DeviceManager(rs.context(), rs_config)
+            device_manager.enable_device(leftCamId, enable_ir_emitter=False)
+            device_manager.enable_device(rightCamId, enable_ir_emitter=False)
+            print ('Use D435 to do stereo calibration. ')
+        else:
+            leftCamId = 2
+            rightCamId = 0
+            cap_r = cv2.VideoCapture(rightCamId)
+            cap_r.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+            cap_r.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+
+            cap_l = cv2.VideoCapture(leftCamId)
+            cap_l.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+            cap_l.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+            print ('Use V2L to do stereo calibration. ')
         
-        bmUI = BM_UI_Controller()
-        myBM = initBM()
+
         count = 0
         while True:
-            bmUI.update()
-            myBM = update_BM(myBM,bmUI.param_dict)
-            
+
             count += 1
             # Wait for a coherent pair of frames: depth and color
             st = time.time()
-            frames_devices = device_manager.poll_frames()
+            
             imgL = None
             imgR = None
-            for (device, frame) in frames_devices.items():
-                image = np.rot90(np.asarray(frame[rs.stream.color].get_data()),3)
-                if device == leftCamId:
-                    imgL = image
-                elif device == rightCamId:
-                    imgR = image
+            if detet_source == 'd435':
+                frames_devices = device_manager.poll_frames()
+                for (device, frame) in frames_devices.items():
+                    image = np.rot90(np.asarray(frame[rs.stream.color].get_data()),3)
+                    if device == leftCamId:
+                        imgL = image
+                    elif device == rightCamId:
+                        imgR = image
+            else:
+                ret_r, imgR = cap_r.read()
+                assert ret_r == True
+                
+                st1 = time.time()    
+                ret_l, imgL = cap_l.read()
+                assert ret_l == True
                     
             if imgL is not None and imgR is not None:
                 h = imgL.shape[0]
                 w = imgL.shape[1]
                 
-                """ stero rectify """
+                """ stereo camera rectify """
                 st_r = time.time()
                 map1x, map1y, map2x, map2y, Q= getRectifyTransform(h, w, stero_param)  
                 iml_rectified, imr_rectified = rectifyImage(imgL, imgR, map1x, map1y, map2x, map2y)
@@ -258,48 +300,54 @@ if __name__ == "__main__":
                 
                 """ show the merge frame """
                 mergeRectifiedImg = draw_line(iml_rectified, imr_rectified)
-#                mergeImg = np.hstack((imgL,imgR))
+                mergeImg = np.hstack((imgL,imgR))
 #                cv2.imwrite("./stero_images/rectiImg_L.jpeg",iml_rectified)
 #                cv2.imwrite("./stero_images/rectiImg_R.jpeg",imr_rectified)
 #                cv2.imwrite("./stero_images/img_L.jpeg",imgL)
 #                cv2.imwrite("./stero_images/img_R.jpeg",imgR)
+#                cv2.imwrite("./stero_images/fisheye_rectImgL_"+str(count)+".jpg",iml_rectified)
+#                cv2.imwrite("./stero_images/fisheye_rectImgR_"+str(count)+".jpg",imr_rectified)
                 
-                
-    #            iml_, imr_ = preprocess(imgL, imgR) # orig_img
-                img_l = iml_rectified[0::5,0::5,:]
-                img_r = imr_rectified[0::5,0::5,:]
-                iml_, imr_ = preprocess(img_l, img_r) # calibrate img
-          
-                disp = None
-                mode = 'bm'
-                if mode == 'sgbm':
-                    """ sgbm """
-                    disp, _ = disparity_SGBM(iml_,imr_)   
-                elif mode == 'bm':
-                    """ bm """
-                    disp = myBM.compute(iml_, imr_)
-                
-                print ("time:",time.time() - st)
-                
-                if disp is not None:
-                    disp = np.divide(disp.astype(np.float32), 16.)
-                    new_arr = ((disp - disp.min()) * (1/(disp.max() - disp.min()) * 255).astype('uint8'))
-#                    cv2.imwrite('./depth/'+'d_'+str(count)+'.jpg',new_arr)
-#                    cv2.imwrite('./depth/'+'cr_'+str(count)+'.jpg',mergeRectifiedImg)
-                    plt.imshow(disp, 'gray')
-                    plt.show()  
-                
-#                depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(disp, alpha=0.9), cv2.COLORMAP_BONE)
+                """ generate depth map by BM/SGBM """
+                if genDepth:
+                    bmUI.update()
+                    myBM = update_BM(myBM,bmUI.param_dict)
+
+                    # iml_, imr_ = preprocess(imgL, imgR) # orig_img
+                    img_l = iml_rectified[0::6,0::6,:]
+                    img_r = imr_rectified[0::6,0::6,:]
+                    iml_, imr_ = preprocess(img_l, img_r) # calibrate img
+            
+                    disp = None
+                    mode = 'bm'
+                    if mode == 'sgbm':
+                        """ sgbm """
+                        disp, _ = disparity_SGBM(iml_,imr_)   
+                    elif mode == 'bm':
+                        """ bm """
+                        disp = myBM.compute(iml_, imr_)
+                    
+                    print ("time:",time.time() - st)
+                    
+                    if disp is not None:
+                        disp = np.divide(disp.astype(np.float32), 16.)
+                        new_arr = ((disp - disp.min()) * (1/(disp.max() - disp.min()) * 255).astype('uint8'))
+#                        cv2.imwrite('./depth/'+'fisheye_depth_'+str(count)+'.jpg',new_arr)
+#                        cv2.imwrite('./depth/'+'fisheye_Recti_'+str(count)+'.jpg',mergeRectifiedImg)
+#                        cv2.imwrite('./depth/'+'fisheye_'+str(count)+'.jpg',mergeImg)
+                        plt.imshow(disp, 'gray')
+                        plt.show()  
+                    # depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(disp, alpha=0.9), cv2.COLORMAP_BONE)
             
                 cv2.namedWindow('demo',cv2.WINDOW_NORMAL)
-                cv2.resizeWindow('demo',(720,640))
+                cv2.resizeWindow('demo',(imgL.shape[1]*2//3,imgL.shape[0]//3))
                 cv2.imshow('demo',mergeRectifiedImg )
                 if cv2.waitKey(1) & 0xff == ord('q'):
                     break
             else:
                 continue
-            
-        device_manager.disable_streams()
+        if detet_source == 'd435':
+            device_manager.disable_streams()
         cv2.destroyAllWindows()
     
     
@@ -307,29 +355,32 @@ if __name__ == "__main__":
         img_l = cv2.imread('./stero_images/rectiImg_L.jpeg')
         img_r = cv2.imread('./stero_images/rectiImg_R.jpeg')
         
-        img_l = img_l[0::3,0::3,:]
-        img_r = img_r[0::3,0::3,:]
+        img_l = img_l[0::5,0::5,:]
+        img_r = img_r[0::5,0::5,:]
         line = draw_line(img_l, img_r)
-        iml_, imr_ = preprocess(img_l, img_r)
+
+        while True:
+            if genDepth:
+                bmUI.update()
+                myBM = update_BM(myBM,bmUI.param_dict)
+
+                iml_, imr_ = preprocess(img_l, img_r)
+                mode = 'BM'
+                st = time.time()
+                if mode == 'BM':
+                    myBM = BM()
+                    disp = myBM.compute(iml_, imr_)
+                elif mode == 'SGBM':
+                    disp, _ = disparity_SGBM(iml_,imr_)  
+                
+                disp = np.divide(disp.astype(np.float32), 16.)  
+                print (time.time()-st)
+                plt.imshow(disp, 'gray')
+                plt.show()  
         
-    
-        mode = 'BM'
-        st = time.time()
-        if mode == 'BM':
-            myBM = BM()
-            disp = myBM.compute(iml_, imr_)
-        elif mode == 'SGBM':
-            disp, _ = disparity_SGBM(iml_,imr_)  
-        
-        disp = np.divide(disp.astype(np.float32), 16.)  
-        print (time.time()-st)
-        plt.imshow(disp, 'gray')
-        plt.show()  
-    
-    
-#        cv2.namedWindow('demo',cv2.WINDOW_NORMAL)
-#        cv2.resizeWindow('demo',(640,480))
-#        cv2.imshow('demo',img_r )
-#        cv2.waitKey(0)
+            cv2.namedWindow('demo',cv2.WINDOW_NORMAL)
+            cv2.resizeWindow('demo',(imgL.shape[1]*2//3,imgL.shape[0]//3))
+            cv2.imshow('demo',img_r )
+            cv2.waitKey(0)
         
 
